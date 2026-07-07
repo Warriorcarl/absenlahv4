@@ -97,8 +97,9 @@ object RuleEngine {
         // Worker is late. Calculate late duration in minutes
         val lateMins = ((checkInTimeMs - baseShiftStartCalendar.timeInMillis) / (60 * 1000)).toInt()
 
-        // Apply 3rd Lateness Rule: The 3rd lateness converts to a leave day deduction if quota exists.
-        // 4th+ lateness reverts to standard fines.
+        // Apply 3rd Lateness Rule: The 3rd lateness in a month converts into a leave day (jatah libur)
+        // deduction instead of a cash fine (only applies once if leave quota exists).
+        // The 4th+ lateness reverts to standard fines calculated from 10:00 AM.
         // If latenessCountThisMonth is exactly 2, this incoming late is the 3rd.
         if (latenessCountThisMonth == 2 && hasLeaveQuota) {
             return CheckInResult(
