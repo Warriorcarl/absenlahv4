@@ -202,32 +202,40 @@ echo -e "${YELLOW}Silakan isi parameter berikut untuk mengonfigurasi production 
 echo -e "${YELLOW}Tekan [ENTER] untuk memilih nilai standar / default.${NC}"
 echo -e "--------------------------------------------------------------------"
 
-read -p "1. Nama Domain Server (misal: absenlah.domain.com) [default: localhost]: " DOMAIN_NAME
-DOMAIN_NAME=${DOMAIN_NAME:-"localhost"}
+read -p "1. Nama Domain Server (misal: absenlah.domain.com) [default: warriorcarl.my.id]: " DOMAIN_NAME
+DOMAIN_NAME=${DOMAIN_NAME:-"warriorcarl.my.id"}
 
-read -p "2. Email untuk Pendaftaran SSL Certbot Let's Encrypt: " EMAIL_SSL
-EMAIL_SSL=${EMAIL_SSL:-"admin@yourdomain.com"}
+read -p "2. Email untuk Pendaftaran SSL Certbot Let's Encrypt [default: warriorcarl@yahoo.com]: " EMAIL_SSL
+EMAIL_SSL=${EMAIL_SSL:-"warriorcarl@yahoo.com"}
 
-read -p "3. Google Maps API Key (Untuk Geofence Map): " MAPS_API_KEY
-MAPS_API_KEY=${MAPS_API_KEY:-"AIzaSyYourProductionGoogleMapsAPIKey_98765"}
+read -p "3. Google Maps API Key [default: AIzaSyAL7sqRHfuJVgPi75x6EGT698v0wWqsc2g]: " MAPS_API_KEY
+MAPS_API_KEY=${MAPS_API_KEY:-"AIzaSyAL7sqRHfuJVgPi75x6EGT698v0wWqsc2g"}
 
-read -p "4. Google Client ID (Untuk Autentikasi Google Sign-In): " G_CLIENT_ID
-G_CLIENT_ID=${G_CLIENT_ID:-"1092837492-mockclientid.apps.googleusercontent.com"}
+read -p "4. Google Client ID [default: 877059452776-58j32gkhse713e0spgv5h05q9bd8f15d.apps.googleusercontent.com]: " G_CLIENT_ID
+G_CLIENT_ID=${G_CLIENT_ID:-"877059452776-58j32gkhse713e0spgv5h05q9bd8f15d.apps.googleusercontent.com"}
 
-read -p "5. Firebase Project ID (Untuk Koneksi Firestore/Auth): " FIREBASE_ID
-FIREBASE_ID=${FIREBASE_ID:-"absenlah-production"}
+read -p "5. Firebase Project ID [default: absenlahv2]: " FIREBASE_ID
+FIREBASE_ID=${FIREBASE_ID:-"absenlahv2"}
 
-read -p "6. Expo EAS Build Token (Opsional, untuk Cloud Compilation): " EXPO_EAS_TOKEN
-EXPO_EAS_TOKEN=${EXPO_EAS_TOKEN:-"your-eas-token-here"}
+read -p "6. Expo EAS Build Token [default: Vq_oX9llm4kYIkQyXiMy4usy39Hrk2lXXos36lRa]: " EXPO_EAS_TOKEN
+EXPO_EAS_TOKEN=${EXPO_EAS_TOKEN:-"Vq_oX9llm4kYIkQyXiMy4usy39Hrk2lXXos36lRa"}
 
 # Write main environment variables
 log_info "Menulis konfigurasi variabel lingkungan ke file .env..."
 cat << EOF > .env
 GOOGLE_MAPS_API_KEY=$MAPS_API_KEY
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=$MAPS_API_KEY
+
 GOOGLE_CLIENT_ID=$G_CLIENT_ID
+EXPO_PUBLIC_GOOGLE_CLIENT_ID=$G_CLIENT_ID
+
 FIREBASE_PROJECT_ID=$FIREBASE_ID
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=$FIREBASE_ID
+
 EXPO_TOKEN=$EXPO_EAS_TOKEN
+
 DEPLOY_DOMAIN=$DOMAIN_NAME
+EXPO_PUBLIC_API_URL=https://$DOMAIN_NAME/api
 EOF
 
 # Write backend environment variables
@@ -240,7 +248,44 @@ FIREBASE_PROJECT_ID=$FIREBASE_ID
 JWT_SECRET=AbsenlahSuperSecretProductionTokenKey_2026
 EOF
 
-log_success "File lingkungan (.env) berhasil dikonfigurasi secara aman."
+# Copy env to app subfolder if it exists for native Android/iOS builds
+if [ -d "app" ]; then
+    cp .env app/.env
+    log_info "Variabel lingkungan disalin ke direktori app/."
+fi
+
+# Dynamically inject credentials into app.json if it exists
+if [ -f "app.json" ] || [ -f "app/app.json" ]; then
+    log_info "Menyisipkan kredensial secara dinamis ke app.json..."
+    node -e "
+        const fs = require('fs');
+        const paths = ['app.json', 'app/app.json'];
+        paths.forEach(file => {
+            if (fs.existsSync(file)) {
+                try {
+                    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+                    if (!data.expo) data.expo = {};
+                    if (!data.expo.extra) data.expo.extra = {};
+                    
+                    // Inject entered credentials
+                    data.expo.extra.googleMapsApiKey = '$MAPS_API_KEY';
+                    data.expo.extra.googleClientId = '$G_CLIENT_ID';
+                    data.expo.extra.firebaseProjectId = '$FIREBASE_ID';
+                    
+                    // Ensure environment variables are mapped to client public scope
+                    if (!data.expo.extra.eas) data.expo.extra.eas = {};
+                    
+                    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+                    console.log(\`[SUCCESS] \${file} berhasil dimodifikasi secara otomatis.\`);
+                } catch (e) {
+                    console.error(\`[ERROR] Gagal memproses \${file}: \` + e.message);
+                }
+            }
+        });
+    " || log_warn "Gagal menyisipkan kredensial ke app.json secara otomatis."
+fi
+
+log_success "Seluruh konfigurasi lingkungan (.env & app.json) berhasil di-injeksi secara aman."
 
 # --- STAGE 3: RUN COMPILATION FOR WEB & ANDROID TARGETS ---
 echo -e "\n${BOLD}${PURPLE}[STAGE 3/5] EXECUTING WEB & NATIVE ANDROID BUILD PIPELINE${NC}"
@@ -309,24 +354,55 @@ echo -e "\n${BOLD}${PURPLE}[STAGE 4/5] CONTAINERIZING PLATFORM & SERVICES WITH O
 
 # Generating comprehensive Multi-Stage Dockerfile
 log_info "Membuat file konfigurasi Dockerfile multi-stage produksi..."
-cat << 'EOF' > Dockerfile
+if [ -f "package.json" ]; then
+    log_info "Mendeteksi proyek berbasis Node/Expo. Membangun Dockerfile dengan Stage Web-Builder..."
+    cat << 'EOF' > Dockerfile
 # ==============================================================================
 # ABSENLAH PLATFORM - COMPREHENSIVE PRODUCTION DOCKERFILE
 # ==============================================================================
-# Multi-stage production container build to compile both Expo web export and
-# the native Android APK. Served securely using a light-weight Nginx container.
-# ==============================================================================
-
 # --- Stage 1: Build Expo Web Assets ---
 FROM node:18-alpine AS web-builder
 WORKDIR /app
 COPY package.json ./
 RUN npm install --no-audit --no-fund
 COPY . .
-# Run Expo production web build export
 RUN npx expo export --platform web || npm run build || mkdir -p dist
 
 # --- Stage 2: Build Native Android APK ---
+FROM eclipse-temurin:17-jdk AS android-builder
+WORKDIR /app
+COPY . .
+RUN apt-get update && apt-get install -y wget unzip git && rm -rf /var/lib/apt/lists/*
+
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+RUN mkdir -p /opt/android-sdk/cmdline-tools \
+    && wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip \
+    && unzip -q cmdline-tools.zip -d /opt/android-sdk/cmdline-tools \
+    && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
+    && rm cmdline-tools.zip
+
+ENV PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin
+RUN yes | sdkmanager --licenses || true
+RUN sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
+
+RUN chmod +x gradlew || true
+RUN ./gradlew assembleDebug --no-daemon || gradle assembleDebug --no-daemon
+
+# --- Stage 3: High-Performance Nginx Web Server ---
+FROM nginx:alpine AS runner
+COPY --from=web-builder /app/dist /usr/share/nginx/html
+RUN mkdir -p /usr/share/nginx/html/download
+COPY --from=android-builder /app/app/build/outputs/apk/debug/app-debug.apk /usr/share/nginx/html/download/absenlah-app.apk
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+EOF
+else
+    log_info "Mendeteksi proyek Native Android murni. Membangun Dockerfile tanpa Stage Web-Builder (menggunakan pre-built local dist)..."
+    cat << 'EOF' > Dockerfile
+# ==============================================================================
+# ABSENLAH PLATFORM - COMPREHENSIVE PRODUCTION DOCKERFILE (NATIVE ANDROID ONLY)
+# ==============================================================================
+# --- Stage 1: Build Native Android APK ---
 FROM eclipse-temurin:17-jdk AS android-builder
 WORKDIR /app
 COPY . .
@@ -350,11 +426,11 @@ RUN sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || t
 RUN chmod +x gradlew || true
 RUN ./gradlew assembleDebug --no-daemon || gradle assembleDebug --no-daemon
 
-# --- Stage 3: High-Performance Nginx Web Server ---
+# --- Stage 2: High-Performance Nginx Web Server ---
 FROM nginx:alpine AS runner
 
-# Copy Expo static production files to Nginx web root
-COPY --from=web-builder /app/dist /usr/share/nginx/html
+# Copy pre-generated local dist files (which contains our index.html) to Nginx web root
+COPY ./dist /usr/share/nginx/html
 
 # Copy the generated Android APK to a dedicated download folder in Nginx web root
 RUN mkdir -p /usr/share/nginx/html/download
@@ -363,6 +439,7 @@ COPY --from=android-builder /app/app/build/outputs/apk/debug/app-debug.apk /usr/
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 EOF
+fi
 log_success "Dockerfile produksi multi-stage berhasil dibuat."
 
 # Generating comprehensive Backend Dockerfile
@@ -490,9 +567,31 @@ echo -e "  - ${BOLD}Sidik Jari SHA-1 Android:${NC} 08:16:D5:3B:31:39:F4:25:2E:E1
 echo -e "  - ${BOLD}Sidik Jari SHA-256 Android:${NC} E1:02:D1:10:C7:36:2E:AC:34:D3:8F:27:D3:2F:F5:F8:D6:29:32:79:99:11:06:78:4A:55:9E:CD:BC:B2:56:40"
 echo -e ""
 echo -e "${BOLD}Langkah Mengaktifkan Server Produksi via Docker Compose:${NC}"
-echo -e "  1. Ambil sertifikat Let's Encrypt gratis Anda:"
+echo -e "  1. Ambil sertifikat Let's Encrypt gratis Anda (jika belum ada):"
 echo -e "     👉 ${CYAN}sudo apt-get install certbot -y && sudo certbot certonly --standalone -d $DOMAIN_NAME --agree-tos -m $EMAIL_SSL${NC}"
 echo -e "  2. Jalankan docker compose build & run:"
 echo -e "     👉 ${CYAN}docker compose up --build -d${NC}"
 echo -e "  3. Aplikasi dan API siap melayani lalu lintas pengguna secara aman!"
 echo -e "===================================================================="
+
+# --- AUTOMATED DEPLOYMENT TRIGGERS ---
+echo -e "\n${BOLD}${CYAN}[AUTOMATED RUNNER] Memulai Proses Docker Compose Secara Otomatis...${NC}"
+echo -e "${YELLOW}Apakah Anda ingin langsung mengaktifkan tumpukan kontainer produksi sekarang? (Y/n)${NC}"
+read -p "👉 Pilihan Anda [default: Y]: " RUN_COMPOSE
+RUN_COMPOSE=${RUN_COMPOSE:-"y"}
+
+if [[ "$RUN_COMPOSE" =~ ^[Yy]$ ]]; then
+    log_info "Menjalankan perintah: docker compose up --build -d ..."
+    if command -v docker >/dev/null 2>&1; then
+        docker compose up --build -d
+        log_success "Selamat! Seluruh layanan Absenlah Platform berhasil dibangun dan aktif!"
+    else
+        log_error "Docker tidak ditemukan di server host Anda. Tidak dapat memulai kontainer secara otomatis."
+    fi
+else
+    log_warn "Menunda aktivasi kontainer. Anda dapat menjalankannya secara manual nanti."
+fi
+
+echo -e "\n${GREEN}${BOLD}====================================================================${NC}"
+echo -e "${GREEN}${BOLD}      ABSENLAH PRODUCTION HUB TELAH AKTIF DI: https://$DOMAIN_NAME  ${NC}"
+echo -e "${GREEN}${BOLD}====================================================================${NC}"
