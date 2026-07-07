@@ -234,6 +234,10 @@ class AbsenlahRepository(private val db: AbsenlahDatabase) {
         pekerjaDao.insertPekerja(pekerja)
     }
 
+    suspend fun getPekerjaByEmailOrUsername(identifier: String): Pekerja? = withContext(Dispatchers.IO) {
+        pekerjaDao.getPekerjaByEmail(identifier) ?: pekerjaDao.getPekerjaByUsername(identifier)
+    }
+
     suspend fun updatePekerja(pekerja: Pekerja) = withContext(Dispatchers.IO) {
         pekerjaDao.updatePekerja(pekerja)
     }

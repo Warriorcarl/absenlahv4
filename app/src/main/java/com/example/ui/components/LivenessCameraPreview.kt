@@ -28,9 +28,14 @@ fun LivenessCameraPreview(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val livenessState by viewModel.livenessState.collectAsState()
 
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraExecutor.shutdown()
+        }
+    }
 
     // Face Detector Options
     val detectorOptions = remember {
@@ -73,12 +78,13 @@ fun LivenessCameraPreview(
 
                                 faceDetector.process(image)
                                     .addOnSuccessListener { faces ->
+                                        val currentState = viewModel.livenessState.value
                                         for (face in faces) {
                                             // 1. Blink Detection Rule (Both eyes closed)
                                             val leftEyeOpen = face.leftEyeOpenProbability ?: 1.0f
                                             val rightEyeOpen = face.rightEyeOpenProbability ?: 1.0f
                                             
-                                            if (livenessState == AbsenlahViewModel.LivenessStep.PROMPT_BLINK) {
+                                            if (currentState == AbsenlahViewModel.LivenessStep.PROMPT_BLINK) {
                                                 if (leftEyeOpen < 0.25f && rightEyeOpen < 0.25f) {
                                                     Log.d("LivenessCamera", "Blink Detected! Eyes: L=$leftEyeOpen, R=$rightEyeOpen")
                                                     viewModel.advanceLiveness("BLINK")
@@ -87,7 +93,7 @@ fun LivenessCameraPreview(
 
                                             // 2. Smile Detection Rule (Smile probability high)
                                             val smiling = face.smilingProbability ?: 0.0f
-                                            if (livenessState == AbsenlahViewModel.LivenessStep.PROMPT_SMILE) {
+                                            if (currentState == AbsenlahViewModel.LivenessStep.PROMPT_SMILE) {
                                                 if (smiling > 0.65f) {
                                                     Log.d("LivenessCamera", "Smile Detected! Smile Prob=$smiling")
                                                     viewModel.advanceLiveness("SMILE")
@@ -123,9 +129,6 @@ fun LivenessCameraPreview(
             }, ContextCompat.getMainExecutor(ctx))
 
             previewView
-        },
-        onRelease = {
-            cameraExecutor.shutdown()
         }
     )
 }

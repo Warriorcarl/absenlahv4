@@ -36,6 +36,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.data.entity.*
 import com.example.ui.SimulatedMap
 import com.example.ui.theme.MyApplicationTheme
@@ -487,6 +490,12 @@ fun LoginScreen(
     val loginError by viewModel.loginError.collectAsState()
     var showGoogleBypassDialog by remember { mutableStateOf(false) }
 
+    var isRegisterMode by remember { mutableStateOf(false) }
+    var fullName by remember { mutableStateOf("") }
+    var selectedDivision by remember { mutableStateOf("Logistics") }
+    var selectedPosition by remember { mutableStateOf("Courier") }
+    var registerError by remember { mutableStateOf<String?>(null) }
+
     if (showGoogleBypassDialog) {
         AlertDialog(
             onDismissRequest = { showGoogleBypassDialog = false },
@@ -561,11 +570,25 @@ fun LoginScreen(
         )
         Spacer(modifier = Modifier.height(24.dp))
 
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (isRegisterMode) {
+            OutlinedTextField(
+                value = fullName,
+                onValueChange = { fullName = it },
+                label = { Text("Nama Lengkap") },
+                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         OutlinedTextField(
             value = username,
             onValueChange = { username = it },
-            label = { Text(t["username"] ?: "Username / Email") },
-            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+            label = { Text(if (isRegisterMode) "Email / Username Baru" else (t["username"] ?: "Username / Email")) },
+            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("username_input"),
@@ -585,10 +608,79 @@ fun LoginScreen(
             singleLine = true
         )
 
-        if (loginError != null) {
+        if (isRegisterMode) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                "Pilih Divisi Kerja:",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                listOf("Logistics", "HR", "Finance", "Operations", "IT").forEach { div ->
+                    val isSelected = selectedDivision == div
+                    Surface(
+                        onClick = { selectedDivision = div },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = div,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = loginError ?: "",
+                "Pilih Jabatan Kerja:",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                listOf("Courier", "Supervisor", "Admin", "Manager").forEach { pos ->
+                    val isSelected = selectedPosition == pos
+                    Surface(
+                        onClick = { selectedPosition = pos },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = pos,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        val displayError = if (isRegisterMode) registerError else loginError
+        if (displayError != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = displayError,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.Start)
@@ -597,43 +689,86 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        Button(
-            onClick = {
-                viewModel.login(username, password, onPasswordChangeRequired) { }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("login_button")
-        ) {
-            Text(t["login"] ?: "Log In")
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Real Google Sign-In Button
-        OutlinedButton(
-            onClick = {
-                activity.startGoogleSignIn(
-                    onSuccess = { email, id, name ->
-                        viewModel.loginWithGoogle(email, id, name) { }
-                    },
-                    onFailure = { errorMsg ->
-                        if (errorMsg.contains("10") || errorMsg.contains("DEVELOPER_ERROR") || errorMsg.contains("gagal") || errorMsg.contains("failed")) {
-                            showGoogleBypassDialog = true
-                        } else {
-                            android.widget.Toast.makeText(activity, errorMsg, android.widget.Toast.LENGTH_LONG).show()
-                        }
+        if (isRegisterMode) {
+            Button(
+                onClick = {
+                    if (username.isBlank() || password.isBlank() || fullName.isBlank()) {
+                        registerError = "Mohon lengkapi semua bidang!"
+                    } else {
+                        registerError = null
+                        viewModel.registerPekerja(
+                            email = username,
+                            passwordRaw = password,
+                            fullName = fullName,
+                            division = selectedDivision,
+                            position = selectedPosition,
+                            onSuccess = {
+                                isRegisterMode = false
+                                registerError = null
+                            },
+                            onFailure = { err ->
+                                registerError = err
+                            }
+                        )
                     }
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-        ) {
-            Icon(Icons.Default.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Masuk via Google")
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Text("Daftar Akun Baru")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TextButton(onClick = { isRegisterMode = false }) {
+                Text("Sudah punya akun? Masuk di sini")
+            }
+        } else {
+            Button(
+                onClick = {
+                    viewModel.login(username, password, onPasswordChangeRequired) { }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("login_button")
+            ) {
+                Text(t["login"] ?: "Log In")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Real Google Sign-In Button
+            OutlinedButton(
+                onClick = {
+                    activity.startGoogleSignIn(
+                        onSuccess = { email, id, name ->
+                            viewModel.loginWithGoogle(email, id, name) { }
+                        },
+                        onFailure = { errorMsg ->
+                            if (errorMsg.contains("10") || errorMsg.contains("DEVELOPER_ERROR") || errorMsg.contains("gagal") || errorMsg.contains("failed")) {
+                                showGoogleBypassDialog = true
+                            } else {
+                                android.widget.Toast.makeText(activity, errorMsg, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(Icons.Default.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Masuk via Google")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TextButton(onClick = { isRegisterMode = true }) {
+                Text("Belum punya akun? Daftar di sini")
+            }
         }
     }
 }
@@ -730,6 +865,27 @@ fun WorkerDashboardScreen(
     var activeTaskForStart by remember { mutableStateOf<CourierTask?>(null) }
 
     // Face Liveness Animation / States
+    val context = LocalContext.current
+    val hasCameraPermission = remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission.value = isGranted
+        if (isGranted) {
+            viewModel.startLivenessVerification()
+        } else {
+            Toast.makeText(context, "Izin kamera diperlukan untuk verifikasi liveness wajah.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     val livenessState by viewModel.livenessState.collectAsState()
     val isLivenessPassed by viewModel.isLivenessPassed.collectAsState()
 
@@ -1597,7 +1753,13 @@ fun WorkerDashboardScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             if (livenessState == AbsenlahViewModel.LivenessStep.IDLE && !isLivenessPassed) {
-                                Button(onClick = { viewModel.startLivenessVerification() }) {
+                                Button(onClick = {
+                                    if (hasCameraPermission.value) {
+                                        viewModel.startLivenessVerification()
+                                    } else {
+                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                    }
+                                }) {
                                     Text("Mulai Verifikasi Liveness")
                                 }
                             } else if (isLivenessPassed) {
@@ -2825,6 +2987,11 @@ fun AdminPanelScreen(
                     }
                 } else {
                     items(nonCourierList) { pekerja ->
+                        var isEditing by remember(pekerja.id) { mutableStateOf(false) }
+                        var editDivision by remember(pekerja.id) { mutableStateOf(pekerja.division) }
+                        var editPosition by remember(pekerja.id) { mutableStateOf(pekerja.position) }
+                        var editRole by remember(pekerja.id) { mutableStateOf(pekerja.role) }
+
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
@@ -2835,21 +3002,97 @@ fun AdminPanelScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(pekerja.name, fontWeight = FontWeight.Bold)
-                                        Text("Divisi: ${pekerja.division} | Jabatan: ${pekerja.position}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        Text("Email: ${pekerja.email ?: "-"}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        Text("Divisi: ${pekerja.division} | Jabatan: ${pekerja.position} (${pekerja.role})", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                                         Text("Device Bound ID: ${pekerja.deviceId ?: "UNBOUND"}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                                     }
-                                    if (pekerja.deviceId != null) {
-                                        Button(
-                                            onClick = { viewModel.unbindUserDevice(pekerja.id) },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Reset ID", fontSize = 10.sp)
+                                    
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(onClick = { isEditing = !isEditing }) {
+                                            Icon(
+                                                imageVector = if (isEditing) Icons.Default.Close else Icons.Default.Edit,
+                                                contentDescription = "Ubah Jabatan",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
                                         }
-                                    } else {
-                                        Text("No Binding", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                        if (pekerja.deviceId != null) {
+                                            Button(
+                                                onClick = { viewModel.unbindUserDevice(pekerja.id) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Reset ID", fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (isEditing) {
+                                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                    Text("Ubah Penugasan Pekerja", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    OutlinedTextField(
+                                        value = editDivision,
+                                        onValueChange = { editDivision = it },
+                                        label = { Text("Divisi (contoh: Logistics, HR, IT)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    OutlinedTextField(
+                                        value = editPosition,
+                                        onValueChange = { editPosition = it },
+                                        label = { Text("Jabatan (contoh: Courier, Supervisor, Admin)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Role Akses: ", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        RadioButton(
+                                            selected = editRole == "pekerja",
+                                            onClick = { editRole = "pekerja" }
+                                        )
+                                        Text("Pekerja", style = MaterialTheme.typography.bodySmall)
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        RadioButton(
+                                            selected = editRole == "admin",
+                                            onClick = { editRole = "admin" }
+                                        )
+                                        Text("Admin", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        TextButton(onClick = { isEditing = false }) {
+                                            Text("Batal")
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                viewModel.updatePekerjaRolePosition(
+                                                    pekerja.id,
+                                                    editDivision,
+                                                    editPosition,
+                                                    editRole
+                                                )
+                                                isEditing = false
+                                            }
+                                        ) {
+                                            Text("Simpan")
+                                        }
                                     }
                                 }
                             }

@@ -47,7 +47,7 @@ fun SimulatedMap(
                     height: 100%;
                     margin: 0;
                     padding: 0;
-                    background: #111827;
+                    background: #f3f4f6;
                 }
                 .leaflet-control-attribution {
                     display: none !important;
@@ -96,11 +96,17 @@ fun SimulatedMap(
                     attributionControl: false
                 }).setView([$warehouseLat, $warehouseLon], 15);
 
+                // Reliable OpenStreetMap Layer (Default)
+                var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(map);
+
                 // Authentic Google Maps Tile Layers
                 var googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
                     maxZoom: 20,
                     subdomains: ['mt0','mt1','mt2','mt3']
-                }).addTo(map);
+                });
 
                 var googleSat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                     maxZoom: 20,
@@ -113,6 +119,7 @@ fun SimulatedMap(
                 });
 
                 var baseMaps = {
+                    "OpenStreetMap": osm,
                     "Google Maps Standard": googleStreets,
                     "Google Maps Satelit": googleSat,
                     "Google Maps Hibrida": googleHybrid
@@ -244,6 +251,7 @@ fun SimulatedMap(
                     settings.useWideViewPort = true
                     settings.loadWithOverviewMode = true
                     settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                     
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {

@@ -9,6 +9,8 @@ import com.example.data.repository.*
 import com.example.data.rule.RuleEngine
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -194,9 +196,86 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
             val success = repository.releaseDeviceBinding(pekerjaId)
             if (success) {
                 _statusMessage.value = "Device binding berhasil dilepas oleh Admin!"
-                // Refresh list
-                repository.getAllPekerja().collect { _allPekerja.value = it }
             }
+        }
+    }
+
+    fun updatePekerjaRolePosition(pekerjaId: Int, newDivision: String, newPosition: String, newRole: String) {
+        viewModelScope.launch {
+            val allList = _allPekerja.value
+            val target = allList.find { it.id == pekerjaId }
+            if (target != null) {
+                val updated = target.copy(
+                    division = newDivision,
+                    position = newPosition,
+                    role = newRole
+                )
+                repository.updatePekerja(updated)
+                _statusMessage.value = "Jabatan dan Divisi ${target.name} berhasil diperbarui!"
+            }
+        }
+    }
+
+    // Helper to await Google Play services Task
+    private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                cont.resume(task.result, onCancellation = {})
+            } else {
+                cont.resumeWithException(task.exception ?: RuntimeException("Task failed"))
+            }
+        }
+    }
+
+    fun registerPekerja(
+        email: String,
+        passwordRaw: String,
+        fullName: String,
+        division: String,
+        position: String,
+        role: String = "pekerja",
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                // Try registering with Firebase Auth first if it's an email
+                if (email.contains("@")) {
+                    val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                    auth.createUserWithEmailAndPassword(email, passwordRaw).awaitTask()
+                }
+            } catch (e: Exception) {
+                // If it is an IllegalStateException (Firebase default not initialized), fall back gracefully
+                if (e !is IllegalStateException && e.message?.contains("Default FirebaseApp") == false) {
+                    onFailure("Gagal registrasi online: ${e.localizedMessage ?: "Format email salah atau sudah terdaftar."}")
+                    return@launch
+                }
+            }
+
+            // Register in SQLite
+            val existing = repository.getPekerjaByEmailOrUsername(email)
+            if (existing != null) {
+                onFailure("User dengan email/username ini sudah terdaftar!")
+                return@launch
+            }
+
+            val newUser = Pekerja(
+                username = email.substringBefore("@"),
+                passwordHash = passwordRaw,
+                name = fullName,
+                division = division,
+                position = position,
+                deviceId = null,
+                role = role,
+                mustChangePassword = false,
+                googleId = null,
+                email = email,
+                isAvailable = true,
+                totalLeaveQuota = 12
+            )
+            repository.registerPekerja(newUser)
+            _statusMessage.value = "Pendaftaran akun ${fullName} berhasil! Silakan masuk."
+            onSuccess()
         }
     }
 
@@ -522,8 +601,6 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
             )
             repository.createCourierTask(newTask)
             _statusMessage.value = "Penugasan pengiriman berhasil dibuat untuk $courierName!"
-            repository.getAllCourierTasks().collect { _allCourierTasks.value = it }
-            repository.getAllPekerja().collect { _allPekerja.value = it }
         }
     }
 
@@ -532,8 +609,6 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
             repository.startCourierTask(taskId, photoPath)
             _statusMessage.value = "Pengiriman Paket Dimulai! Status kurir diatur menjadi 'Dalam Tugas'."
             _loggedInUser.value?.let { loadUserData(it) }
-            repository.getAllCourierTasks().collect { _allCourierTasks.value = it }
-            repository.getAllPekerja().collect { _allPekerja.value = it }
         }
     }
 
@@ -542,8 +617,6 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
             repository.completeCourierTask(taskId, photoPath, currentLat, currentLon)
             _statusMessage.value = "Pengiriman Selesai! Bukti Pengiriman (POD) berhasil diunggah."
             _loggedInUser.value?.let { loadUserData(it) }
-            repository.getAllCourierTasks().collect { _allCourierTasks.value = it }
-            repository.getAllPekerja().collect { _allPekerja.value = it }
         }
     }
 
@@ -551,7 +624,6 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.overrideCourierAvailability(courierId, isAvailable)
             _statusMessage.value = "Status ketersediaan kurir berhasil diubah secara manual."
-            repository.getAllPekerja().collect { _allPekerja.value = it }
         }
     }
 
