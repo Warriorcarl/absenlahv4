@@ -425,7 +425,8 @@ fun MainContent(viewModel: AbsenlahViewModel, activity: MainActivity) {
                         manualOverrideCheckInTime = manualOverrideCheckInTime,
                         onManualOverrideCheckInTimeChange = { manualOverrideCheckInTime = it },
                         manualOverrideCheckOutTime = manualOverrideCheckOutTime,
-                        onManualOverrideCheckOutTimeChange = { manualOverrideCheckOutTime = it }
+                        onManualOverrideCheckOutTimeChange = { manualOverrideCheckOutTime = it },
+                        onNavigateToTab = { currentTab = it }
                     )
                     "history" -> HistoryScreen(viewModel, user, t)
                     "leave" -> LeaveScreen(viewModel, user, t)
@@ -705,7 +706,8 @@ fun WorkerDashboardScreen(
     manualOverrideCheckInTime: String,
     onManualOverrideCheckInTimeChange: (String) -> Unit,
     manualOverrideCheckOutTime: String,
-    onManualOverrideCheckOutTimeChange: (String) -> Unit
+    onManualOverrideCheckOutTimeChange: (String) -> Unit,
+    onNavigateToTab: (String) -> Unit = {}
 ) {
     val todayLog by viewModel.todayLog.collectAsState()
     val userStats by viewModel.userStats.collectAsState()
@@ -837,6 +839,286 @@ fun WorkerDashboardScreen(
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
+                }
+            }
+        }
+
+        // 1. Current Attendance Status & Quick Actions Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Status & Tindakan Cepat",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Current attendance status
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (todayLog == null) Color(0xFFF3F4F6) else Color(0xFFECFDF5),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Kehadiran Hari Ini:", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            Text(
+                                text = if (todayLog == null) "Belum Check-In" else "Sudah Hadir (${todayLog!!.checkInStatus})",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (todayLog == null) Color.Gray else Color(0xFF10B981)
+                            )
+                        }
+                        
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (todayLog != null) {
+                                val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text("Masuk: ${sdf.format(Date(todayLog!!.checkInTime))}") },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color.White)
+                                )
+                                if (todayLog!!.checkOutTime != null) {
+                                    SuggestionChip(
+                                        onClick = {},
+                                        label = { Text("Pulang: ${sdf.format(Date(todayLog!!.checkOutTime!!))}") },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color.White)
+                                    )
+                                }
+                            } else {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text("Shift STANDARD") },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color.White)
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Quick Action buttons row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                onNavigateToTab("leave")
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(8.dp)
+                        ) {
+                            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Ajukan Cuti", style = MaterialTheme.typography.labelMedium)
+                        }
+                        
+                        OutlinedButton(
+                            onClick = {
+                                onNavigateToTab("notifications")
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(8.dp)
+                        ) {
+                            Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Notifikasi", style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                onNavigateToTab("history")
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(8.dp)
+                        ) {
+                            Icon(Icons.Default.List, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Riwayat", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Interactive Shift Calendar View & Details with Overtime Markers
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Kalender Jadwal Kerja & Shift",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Pilih hari untuk melihat detail tugas, shift reguler, dan jam lembur.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Simple interactive horizontal week selection
+                    var selectedDayIndex by remember { mutableStateOf(0) }
+                    val weekDays = listOf(
+                        Triple("Sen", "06", "STANDARD"),
+                        Triple("Sel", "07", "STANDARD"),
+                        Triple("Rab", "08", "OVERTIME"),
+                        Triple("Kam", "09", "STANDARD"),
+                        Triple("Jum", "10", "LEAVE"),
+                        Triple("Sab", "11", "OFF"),
+                        Triple("Min", "12", "OFF")
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        weekDays.forEachIndexed { index, day ->
+                            val isSelected = selectedDayIndex == index
+                            val hasOvertime = day.third == "OVERTIME"
+                            val isLeave = day.third == "LEAVE"
+                            val isOff = day.third == "OFF"
+                            
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        when {
+                                            isSelected -> MaterialTheme.colorScheme.primary
+                                            isLeave -> Color(0xFFE8F5E9)
+                                            hasOvertime -> Color(0xFFFFF3E0)
+                                            isOff -> Color(0xFFF3F4F6)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { selectedDayIndex = index }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = day.first,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSelected) Color.White else Color.Gray,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = day.second,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isSelected) Color.White else Color.Black,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    
+                                    // Custom markers
+                                    if (hasOvertime) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFF57C00))
+                                        )
+                                    } else if (isLeave) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF2E7D32))
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Selected Day Shift details card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            val activeDay = weekDays[selectedDayIndex]
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Detail Shift: Hari ${activeDay.first} (${activeDay.second} Juli 2026)",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text(activeDay.third) },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = when (activeDay.third) {
+                                            "OVERTIME" -> Color(0xFFFFF3E0)
+                                            "LEAVE" -> Color(0xFFE8F5E9)
+                                            "OFF" -> Color(0xFFF3F4F6)
+                                            else -> Color(0xFFE3F2FD)
+                                        },
+                                        labelColor = when (activeDay.third) {
+                                            "OVERTIME" -> Color(0xFFF57C00)
+                                            "LEAVE" -> Color(0xFF2E7D32)
+                                            "OFF" -> Color.Gray
+                                            else -> Color(0xFF1565C0)
+                                        }
+                                    )
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            when (activeDay.third) {
+                                "STANDARD" -> {
+                                    Text("• Jam Kerja: 08:00 AM - 05:00 PM (Shift Standar)", style = MaterialTheme.typography.bodySmall)
+                                    Text("• SOP Toleransi Terlambat: Maksimal 15 menit.", style = MaterialTheme.typography.bodySmall)
+                                    Text("• Status Kehadiran: Sesuai Jadwal", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                }
+                                "OVERTIME" -> {
+                                    Text("• Jam Kerja: 08:00 AM - 05:00 PM (Shift Standar)", style = MaterialTheme.typography.bodySmall)
+                                    Text("• Lembur Terjadwal (Approved): 05:00 PM - 07:00 PM (+2 Jam)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                                    Text("• Kompensasi Lembur: Bonus lembur Rp100.000 terdeteksi otomatis oleh sistem.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFE65100))
+                                }
+                                "LEAVE" -> {
+                                    Text("• Status: Cuti Bersama Disetujui (ESS)", style = MaterialTheme.typography.bodySmall, color = Color(0xFF2E7D32))
+                                    Text("• Deskripsi: Cuti Tahunan yang disubmit dan disetujui supervisor via portal ESS.", style = MaterialTheme.typography.bodySmall)
+                                }
+                                "OFF" -> {
+                                    Text("• Status: Hari Libur Kerja", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                    Text("• Tidak wajib melakukan Check-In / Check-Out.", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2223,21 +2505,77 @@ fun LeaveScreen(viewModel: AbsenlahViewModel, user: Pekerja, t: Map<String, Stri
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Konfirmasi Pengajuan Cuti",
+                        "Formulir Pengajuan Cuti",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text("Pilih Tipe Cuti / Alasan:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(4.dp))
+                    
+                    val reasons = listOf(
+                        "Cuti Tahunan" to "STANDARD",
+                        "Sakit (Surat Dokter)" to "SICK",
+                        "Acara Keluarga" to "CASUAL",
+                        "Urusan Mendesak" to "EMERGENCY"
+                    )
+                    var selectedLeaveTypeIndex by remember { mutableStateOf(0) }
+                    
+                    reasons.forEachIndexed { index, pair ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedLeaveTypeIndex = index }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            RadioButton(
+                                selected = selectedLeaveTypeIndex == index,
+                                onClick = { selectedLeaveTypeIndex = index }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(pair.first, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    var notifyManager by remember { mutableStateOf(true) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = notifyManager,
+                            onCheckedChange = { notifyManager = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Kirim Notifikasi Langsung ke Manajer", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                            Text("Simulasi kirim alert Whatsapp / push notification ke Supervisor.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        if (dateString.isEmpty()) "Silakan pilih tanggal pada kalender cuti di atas." 
-                        else "Anda akan mengajukan cuti untuk tanggal: $dateString",
-                        style = MaterialTheme.typography.bodyMedium
+                        if (dateString.isEmpty()) "Silakan pilih tanggal pada kalender cuti di atas terlebih dahulu." 
+                        else "Anda akan mengajukan cuti (${reasons[selectedLeaveTypeIndex].first}) pada tanggal: $dateString",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (dateString.isEmpty()) Color.Red else MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
                         onClick = {
-                            viewModel.submitLeave(dateString, "STANDARD", null) {
+                            val type = reasons[selectedLeaveTypeIndex].second
+                            viewModel.submitLeave(dateString, type, null) { msg ->
+                                if (notifyManager) {
+                                    viewModel.addNotification(
+                                        "PENGAJUAN CUTI",
+                                        "Karyawan ${user.name} mengajukan cuti (${reasons[selectedLeaveTypeIndex].first}) untuk tanggal $dateString. Notifikasi telah terkirim ke Manajer."
+                                    )
+                                }
                                 dateString = ""
                             }
                         },

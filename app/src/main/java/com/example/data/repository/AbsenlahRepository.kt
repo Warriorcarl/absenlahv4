@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -141,8 +142,58 @@ class AbsenlahRepository(private val db: AbsenlahDatabase) {
         return dynamicConfigDao.getAllConfigsSync().associate { it.key to it.value }
     }
 
+    // Helper to await Google Play services Task
+    private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                cont.resume(task.result, onCancellation = {})
+            } else {
+                cont.resumeWithException(task.exception ?: RuntimeException("Task failed"))
+            }
+        }
+    }
+
     // AUTH & DEVISE BINDING METHODS
     suspend fun login(identifier: String, passwordRaw: String): LoginResult = withContext(Dispatchers.IO) {
+        // Try logging in via Firebase Auth first (using email if possible)
+        if (identifier.contains("@")) {
+            try {
+                val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                val taskResult = auth.signInWithEmailAndPassword(identifier, passwordRaw).awaitTask()
+                val firebaseUser = taskResult.user
+                if (firebaseUser != null) {
+                    var user = pekerjaDao.getPekerjaByEmail(identifier)
+                    if (user == null) {
+                        user = Pekerja(
+                            username = identifier.substringBefore("@"),
+                            passwordHash = passwordRaw,
+                            name = identifier.substringBefore("@").replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() },
+                            division = "Logistics",
+                            position = "Courier",
+                            deviceId = null,
+                            role = "pekerja",
+                            mustChangePassword = false,
+                            googleId = null,
+                            email = identifier
+                        )
+                        pekerjaDao.insertPekerja(user)
+                        user = pekerjaDao.getPekerjaByEmail(identifier)
+                    }
+                    if (user != null) {
+                        return@withContext LoginResult.Success(user)
+                    }
+                }
+            } catch (e: Exception) {
+                // If it is an IllegalStateException (Firebase default not initialized), fall back gracefully
+                if (e is IllegalStateException || e.message?.contains("Default FirebaseApp") == true) {
+                    Log.d("FirebaseLogin", "Firebase not initialized, falling back to secure local DB")
+                } else {
+                    return@withContext LoginResult.Failure("Firebase Auth Error: ${e.localizedMessage ?: "Gagal terhubung."}")
+                }
+            }
+        }
+
+        // Secure offline local fallback authentication
         val user = pekerjaDao.getPekerjaByUsername(identifier)
             ?: pekerjaDao.getPekerjaByEmail(identifier)
             ?: return@withContext LoginResult.Failure("User tidak ditemukan (User not found)")

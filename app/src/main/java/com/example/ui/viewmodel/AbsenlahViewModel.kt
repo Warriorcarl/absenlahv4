@@ -110,6 +110,12 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.getAllCourierTasks().collect { _allCourierTasks.value = it }
         }
+        _notifications.value = listOf(
+            "INFO KEBIJAKAN: Kebijakan Toleransi Keterlambatan Absensi disesuaikan menjadi maksimal 15 menit per 1 Juli 2026.",
+            "ALERT PENGURANGAN KUOTA: Kuota cuti tahunan pekerja secara otomatis diperbarui oleh sistem HR.",
+            "ALERTS DIVISI: Seluruh personil divisi Logistik wajib mengenakan rompi keselamatan kerja (K3) selama shift standar.",
+            "KONFIRMASI SYSTEM: Device ID berhasil diverifikasi saat login untuk mencegah bypass absensi."
+        )
     }
 
     // AUTHENTICATION
@@ -579,6 +585,11 @@ class AbsenlahViewModel(application: Application) : AndroidViewModel(application
             repository.getActiveAnnouncements().collect { _announcements.value = it }
             repository.getAllAnnouncements().collect { _allAnnouncements.value = it }
         }
+    }
+
+    fun addNotification(title: String, message: String) {
+        val pushAlert = "$title: $message"
+        _notifications.value = listOf(pushAlert) + _notifications.value
     }
 
     // CONFIG & GEOLOCATION MANAGE

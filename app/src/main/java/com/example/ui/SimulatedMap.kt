@@ -201,6 +201,21 @@ fun SimulatedMap(
                             delete courierMarkers[name];
                         }
                     }
+
+                    // Auto fit bounds to active markers
+                    var markersGroup = [];
+                    if (userLat !== 0.0 && userLon !== 0.0) markersGroup.push([userLat, userLon]);
+                    if (destLat !== 0.0 && destLon !== 0.0) markersGroup.push([destLat, destLon]);
+                    for (var i = 0; i < couriersList.length; i++) {
+                        markersGroup.push([couriersList[i].lat, couriersList[i].lon]);
+                    }
+                    markersGroup.push([$warehouseLat, $warehouseLon]); // warehouse is always there
+                    
+                    if (markersGroup.length > 1) {
+                        map.fitBounds(markersGroup, { padding: [30, 30] });
+                    } else {
+                        map.setView([$warehouseLat, $warehouseLon], 15);
+                    }
                 }
 
                 // Click Callback
@@ -228,11 +243,23 @@ fun SimulatedMap(
                     settings.domStorageEnabled = true
                     settings.useWideViewPort = true
                     settings.loadWithOverviewMode = true
+                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             isPageLoaded = true
+                            // Trigger initial coordinate injection
+                            val userLat = userLocation?.first ?: 0.0
+                            val userLon = userLocation?.second ?: 0.0
+                            val destLat = deliveryDestination?.first ?: 0.0
+                            val destLon = deliveryDestination?.second ?: 0.0
+                            val couriersJsArray = couriers.map { courier ->
+                                val escapedName = courier.first.replace("'", "\\'")
+                                "{ name: '$escapedName', lat: ${courier.second.first}, lon: ${courier.second.second} }"
+                            }.joinToString(", ", "[", "]")
+                            val js = "updatePositions($userLat, $userLon, $couriersJsArray, $destLat, $destLon);"
+                            view?.evaluateJavascript(js, null)
                         }
                     }
 
@@ -247,7 +274,7 @@ fun SimulatedMap(
                         }, "AndroidInterface")
                     }
 
-                    loadDataWithBaseURL("https://maps.google.com", htmlContent, "text/html", "UTF-8", null)
+                    loadDataWithBaseURL("https://localhost", htmlContent, "text/html", "UTF-8", null)
                 }
             },
             update = { webView ->
