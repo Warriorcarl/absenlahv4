@@ -191,23 +191,33 @@ fi
 echo -e "\n${BOLD}${PURPLE}--- STAGE 4: GENERATING CONTAINERIZATION ENVIRONMENT ---${NC}"
 
 # Generating Production-Ready Dockerfile
-log_info "Menghasilkan file konfigurasi Dockerfile produksi..."
+log_info "Menghasikan file konfigurasi Dockerfile produksi..."
 cat << 'EOF' > Dockerfile
 # ==============================================================================
-# ABSENLAH PLATFORM - PRODUCTION CONTAINERIZATION ENVIRONMENT
+# ABSENLAH PLATFORM - COMPREHENSIVE PRODUCTION DOCKERFILE
 # ==============================================================================
-# This Dockerfile provides a production-grade multi-stage containerized build environment.
-# It packages both the static build tools and runtime dependencies.
+# Multi-stage production container build to compile both Expo web export and
+# the native Android APK. Served securely using a light-weight Nginx container.
 # ==============================================================================
 
-# Stage 1: Build Environment
-FROM openjdk:17-jdk-slim AS builder
+# --- Stage 1: Build Expo Web Assets ---
+FROM node:18-alpine AS web-builder
+WORKDIR /app
+COPY package.json ./
+RUN npm install --no-audit --no-fund
+COPY . .
+# Run Expo production web build export
+RUN npx expo export --platform web || npm run build || mkdir -p dist
 
+# --- Stage 2: Build Native Android APK ---
+FROM openjdk:17-jdk-slim AS android-builder
 WORKDIR /app
 COPY . .
 
-# Accept licenses and build application
+# Install necessary utilities
 RUN apt-get update && apt-get install -y wget unzip git && rm -rf /var/lib/apt/lists/*
+
+# Set up Android SDK
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 RUN mkdir -p /opt/android-sdk/cmdline-tools \
     && wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip \
@@ -219,19 +229,19 @@ ENV PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin
 RUN yes | sdkmanager --licenses || true
 RUN sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
 
-# Run Gradle Build to output production assets
+# Compile production APK
 RUN chmod +x gradlew || true
 RUN ./gradlew assembleDebug --no-daemon || gradle assembleDebug --no-daemon
 
-# Stage 2: Production Web Server / Distribution Hub
+# --- Stage 3: High-Performance Nginx Web Server ---
 FROM nginx:alpine AS runner
 
-# Copy distribution assets (APK & static panels) to self-hosted Nginx web root
-RUN mkdir -p /usr/share/nginx/html/download
-COPY --from=builder /app/app/build/outputs/apk/debug/app-debug.apk /usr/share/nginx/html/download/absenlah-app.apk
+# Copy Expo static production files to Nginx web root
+COPY --from=web-builder /app/dist /usr/share/nginx/html
 
-# Generate static web interface to download the APK directly
-RUN echo '<html><head><title>Absenlah Self-Hosted Distribution Hub</title><style>body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #111827; color: #f3f4f6; margin: 0; } .card { background: #1f2937; padding: 2.5rem; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); text-align: center; } a { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 1rem; transition: background 0.2s; } a:hover { background: #2563eb; }</style></head><body><div class="card"><h1>Absenlah Platform Hub</h1><p>Aplikasi Presensi Logistik & Gudang Pintar</p><a href="/download/absenlah-app.apk" download>Unduh Aplikasi Android (.APK)</a><div style="margin-top: 15px; font-size: 11px; color: #9ca3af;">Verifikasi Liveness Wajah, GPS Geofencing, & Google Sign-In Terintegrasi</div></div></body></html>' > /usr/share/nginx/html/index.html
+# Copy the generated Android APK to a dedicated download folder in Nginx web root
+RUN mkdir -p /usr/share/nginx/html/download
+COPY --from=android-builder /app/app/build/outputs/apk/debug/app-debug.apk /usr/share/nginx/html/download/absenlah-app.apk
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
