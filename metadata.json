@@ -1,0 +1,6 @@
+{
+  "name": "Absenlah",
+  "description": "Enterprise-grade attendance application (SOPs, Dynamic Shifts, Fines, Leave Rules, ESS, Overtime)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
