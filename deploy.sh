@@ -381,7 +381,12 @@ RUN mkdir -p /opt/android-sdk/cmdline-tools \
     && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
     && rm cmdline-tools.zip
 
-ENV PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin
+ENV GRADLE_VERSION=8.4
+RUN wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
+    && unzip -q gradle-${GRADLE_VERSION}-bin.zip -d /opt \
+    && rm gradle-${GRADLE_VERSION}-bin.zip
+
+ENV PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin:/opt/gradle-${GRADLE_VERSION}/bin
 RUN yes | sdkmanager --licenses || true
 RUN sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
 
@@ -418,7 +423,13 @@ RUN mkdir -p /opt/android-sdk/cmdline-tools \
     && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
     && rm cmdline-tools.zip
 
-ENV PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin
+# Set up Gradle
+ENV GRADLE_VERSION=8.4
+RUN wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
+    && unzip -q gradle-${GRADLE_VERSION}-bin.zip -d /opt \
+    && rm gradle-${GRADLE_VERSION}-bin.zip
+
+ENV PATH=$PATH:/opt/android-sdk/cmdline-tools/latest/bin:/opt/gradle-${GRADLE_VERSION}/bin
 RUN yes | sdkmanager --licenses || true
 RUN sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
 
