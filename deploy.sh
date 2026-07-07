@@ -48,8 +48,8 @@ echo -e "${YELLOW}Apakah Anda ingin meng-kloning / meng-unduh repositori Absenla
 read -p "👉 Pilihan Anda: " DO_CLONE
 
 if [[ "$DO_CLONE" =~ ^[Yy]$ ]]; then
-    read -p "👉 Masukkan URL Repository GitHub [default: https://github.com/warriorcarl/absenlah-platform.git]: " GIT_REPO_URL
-    GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/warriorcarl/absenlah-platform.git"}
+    read -p "👉 Masukkan URL Repository GitHub [default: https://github.com/Warriorcarl/absenlahv4.git]: " GIT_REPO_URL
+    GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/Warriorcarl/absenlahv4.git"}
     
     log_info "Mengunduh kode sumber dari $GIT_REPO_URL..."
     if command -v git >/dev/null 2>&1; then
@@ -361,6 +361,22 @@ EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 EOF
 log_success "Dockerfile produksi multi-stage berhasil dibuat."
+
+# Generating comprehensive Backend Dockerfile
+log_info "Membuat file konfigurasi Dockerfile backend produksi..."
+cat << 'EOF' > Dockerfile.backend
+# ==============================================================================
+# ABSENLAH PLATFORM - PRODUCTION BACKEND DOCKERFILE
+# ==============================================================================
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --production
+COPY . .
+EXPOSE 5000
+CMD ["node", "index.js"]
+EOF
+log_success "Dockerfile backend produksi berhasil dibuat."
 
 # Generate Docker Compose
 log_info "Membuat konfigurasi docker-compose.yml..."
