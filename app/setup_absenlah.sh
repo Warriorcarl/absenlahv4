@@ -13,11 +13,25 @@ NC='\033[0m' # No Color
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 
+LOG_FILE="deploy_absenlah.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 echo -e "${CYAN}${BOLD}======================================================${NC}"
 echo -e "${CYAN}${BOLD}         ABSENLAH ENTERPRISE ALL-IN-ONE DEPLOYER       ${NC}"
 echo -e "${CYAN}${BOLD}======================================================${NC}"
 echo -e "${BLUE}Menyiapkan instalasi server, reverse proxy, dan mobile builder...${NC}"
 echo ""
+
+# Error Handling & Rollback Mechanism
+trap 'rollback' ERR
+
+rollback() {
+    echo -e "${RED}Terjadi kesalahan! Memulai mekanisme rollback...${NC}"
+    # Basic rollback: stop docker containers if they were started
+    docker-compose down || true
+    echo -e "${YELLOW}Rollback selesai. Silakan periksa $LOG_FILE untuk detail kesalahan.${NC}"
+    exit 1
+}
 
 # 1. System Requirement Checks
 check_root() {
@@ -31,7 +45,7 @@ check_root() {
 install_dependencies() {
     echo -e "${YELLOW}[1/5] Memperbarui paket sistem dan menginstal dependensi...${NC}"
     apt-get update -y
-    apt-get install -y curl git wget unzip openjdk-17-jdk nginx certbot python3-certbot-nginx docker.io docker-compose
+    apt-get install -y curl git wget unzip openjdk-17-jdk nginx certbot python3-certbot-nginx docker.io docker-compose nodejs npm
     
     # Enable Docker service
     systemctl start docker || true
@@ -39,9 +53,18 @@ install_dependencies() {
     echo -e "${GREEN}✔ Dependensi dasar berhasil diinstal!${NC}"
 }
 
-# 2. Setup Environment Variables
+# 2. Setup Environment Variables CLI Wizard
 setup_env() {
-    echo -e "${YELLOW}[2/5] Mengonfigurasi file lingkungan (.env)...${NC}"
+    echo -e "${YELLOW}[2/5] Menjalankan CLI Wizard untuk konfigurasi (.env)...${NC}"
+
+    if [ -f .env ]; then
+        read -p "File .env sudah ada. Timpa? (y/n): " overwrite
+        if [[ $overwrite != "y" ]]; then
+            echo -e "${BLUE}Menggunakan file .env yang sudah ada.${NC}"
+            return
+        fi
+    fi
+
     read -p "Masukkan nama domain server Anda (contoh: absenlah.com): " DOMAIN_NAME
     read -p "Masukkan email Anda untuk SSL Let's Encrypt: " SSL_EMAIL
     read -p "Masukkan port backend layanan (default: 8080): " BACKEND_PORT
@@ -58,66 +81,35 @@ DB_PASSWORD=$(openssl rand -base64 12)
 DB_NAME=absenlah_db
 EOF
 
-    echo -e "${GREEN}✔ File .env berhasil dibuat dengan token keamanan terenkripsi!${NC}"
+    echo -e "${GREEN}✔ File .env berhasil dibuat!${NC}"
 }
 
-# 3. Docker Compose Configuration for database & backend services
+# 3. Docker Compose Configuration
 setup_docker() {
-    echo -e "${YELLOW}[3/5] Membuat konfigurasi Docker Compose...${NC}"
-    
-    cat <<EOF > docker-compose.yml
-version: '3.8'
-
-services:
-  db:
-    image: postgres:15-alpine
-    container_name: absenlah_postgres
-    restart: always
-    environment:
-      POSTGRES_USER: \${DB_USER}
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
-      POSTGRES_DB: \${DB_NAME}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  backend:
-    image: node:18-alpine
-    container_name: absenlah_backend
-    restart: always
-    working_dir: /usr/src/app
-    ports:
-      - "\${PORT}:\${PORT}"
-    environment:
-      - PORT=\${PORT}
-      - JWT_SECRET=\${JWT_SECRET}
-      - DB_URI=postgres://\${DB_USER}:\${DB_PASSWORD}@db:5432/\${DB_NAME}
-    depends_on:
-      - db
-    volumes:
-      - ./backend:/usr/src/app
-
-volumes:
-  postgres_data:
-EOF
-
-    echo -e "${GREEN}✔ Konfigurasi docker-compose.yml berhasil dibuat!${NC}"
+    echo -e "${YELLOW}[3/5] Mengonfigurasi layanan Docker...${NC}"
+    # Verify docker-compose.yml exists (it should be in the root)
+    if [ ! -f "docker-compose.yml" ]; then
+        echo -e "${RED}Error: docker-compose.yml tidak ditemukan di root!${NC}"
+        exit 1
+    fi
+    docker-compose up -d --build
+    echo -e "${GREEN}✔ Layanan backend & database berhasil dijalankan di background!${NC}"
 }
 
-# 4. Configure Nginx Reverse Proxy with automatic SSL
+# 4. Configure Nginx Reverse Proxy
 setup_nginx() {
     echo -e "${YELLOW}[4/5] Mengonfigurasi Nginx Web Server & SSL...${NC}"
     
-    NGINX_CONF="/etc/nginx/sites-available/$DOMAIN_NAME"
+    source .env
+    NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
     
     cat <<EOF > $NGINX_CONF
 server {
     listen 80;
-    server_name $DOMAIN_NAME;
+    server_name $DOMAIN;
 
     location / {
-        proxy_pass http://localhost:$BACKEND_PORT;
+        proxy_pass http://localhost:$PORT;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -130,55 +122,40 @@ EOF
     ln -sf $NGINX_CONF /etc/nginx/sites-enabled/ || true
     rm -f /etc/nginx/sites-enabled/default || true
     
-    # Reload Nginx
     systemctl restart nginx || true
-    
-    echo -e "${YELLOW}Mengonfigurasi SSL gratis via Let's Encrypt untuk $DOMAIN_NAME...${NC}"
-    # certbot --nginx -d $DOMAIN_NAME --non-interactive --agree-tos -m $SSL_EMAIL
-    echo -e "${GREEN}✔ Nginx Reverse Proxy & SSL (Simulasi) berhasil disiapkan!${NC}"
+    echo -e "${GREEN}✔ Nginx Reverse Proxy berhasil disiapkan!${NC}"
 }
 
-# 5. Build Pipeline for Mobile App
+# 5. Build Pipeline for Mobile App (Release APK)
 build_mobile_app() {
-    echo -e "${YELLOW}[5/5] Memulai pipeline build Android APK...${NC}"
+    echo -e "${YELLOW}[5/5] Memulai pipeline build Android APK Release...${NC}"
     
-    # Download Android SDK command line tools if not present
-    if [ -z "$ANDROID_HOME" ]; then
-        echo "Mengunduh Android SDK Command-line Tools..."
-        mkdir -p $HOME/android-sdk/cmdline-tools
-        wget -q --show-progress https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip || true
-        if [ -f cmdline.zip ]; then
-            unzip -q cmdline.zip -d $HOME/android-sdk/cmdline-tools || true
-            mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest || true
-            rm cmdline.zip
-        fi
-        export ANDROID_HOME=$HOME/android-sdk
-        export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
-        
-        # Accept SDK licenses
-        yes | sdkmanager --licenses || true
+    if [ ! -f "./gradlew" ]; then
+        echo -e "${RED}Error: gradlew tidak ditemukan! Pastikan Anda berada di root project.${NC}"
+        exit 1
     fi
 
-    echo "Menjalankan kompilasi Gradle..."
-    chmod +x gradle || true
-    gradle assembleDebug || ./gradlew assembleDebug || echo "Gradle build skipped (server compilation can be performed offline)"
+    chmod +x ./gradlew
+    ./gradlew assembleRelease
 
-    echo -e "${GREEN}✔ Kompilasi selesai! APK siap diunduh di: .build-outputs/app-debug.apk${NC}"
+    mkdir -p build_output
+    cp app/build/outputs/apk/release/app-release.apk build_output/absenlah_enterprise_release.apk || \
+    cp app/build/outputs/apk/release/app-release-unsigned.apk build_output/absenlah_enterprise_release.apk || true
+
+    echo -e "${GREEN}✔ Kompilasi selesai! APK Release siap di: build_output/absenlah_enterprise_release.apk${NC}"
 }
 
-# Execute phases
-check_root || echo "Menjalankan simulasi non-root untuk verifikasi skrip..."
-install_dependencies || true
-setup_env || true
-setup_docker || true
-setup_nginx || true
-build_mobile_app || true
+# Main Execution Flow
+check_root
+install_dependencies
+setup_env
+setup_docker
+setup_nginx
+build_mobile_app
 
 echo ""
 echo -e "${GREEN}${BOLD}======================================================${NC}"
 echo -e "${GREEN}${BOLD}        ABSENLAH ENTERPRISE BERHASIL DI-DEPLOY!       ${NC}"
 echo -e "${GREEN}${BOLD}======================================================${NC}"
-echo -e "${BLUE}Domain Aktif: ${CYAN}http://$DOMAIN_NAME${NC}"
-echo -e "${BLUE}Docker Status: ${GREEN}Running in Background${NC}"
-echo -e "${BLUE}File APK: ${YELLOW}.build-outputs/app-debug.apk${NC}"
+echo -e "${BLUE}Status Log: ${YELLOW}$LOG_FILE${NC}"
 echo -e "${GREEN}${BOLD}======================================================${NC}"

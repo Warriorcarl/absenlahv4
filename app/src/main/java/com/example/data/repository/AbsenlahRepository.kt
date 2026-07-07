@@ -412,19 +412,26 @@ class AbsenlahRepository(private val db: AbsenlahDatabase) {
         var finalQuota = pekerja.totalLeaveQuota
         val isLate = checkInEval.status == "LATE" || isAfter2PM
 
-        val finalCheckInStatus = if (isLate) "LATE" else "ON_TIME"
+        var leaveQuotaDeducted = false
         val finalLatenessMitigationType = when {
-            isAfter2PM -> "REDUCE_LEAVE_2PM" // automatically reduces leave
-            isLate -> "PENDING"              // pending admin review!
+            isAfter2PM -> {
+                leaveQuotaDeducted = true
+                "REDUCE_LEAVE_2PM"
+            }
+            checkInEval.convertedToLeaveDeduction -> {
+                leaveQuotaDeducted = true
+                "REDUCE_LEAVE_3RD"
+            }
+            isLate -> "PENDING"
             else -> null
         }
 
-        var leaveQuotaDeducted = false
-        if (isAfter2PM) {
+        if (leaveQuotaDeducted) {
             finalQuota = (finalQuota - 1).coerceAtLeast(0)
             pekerjaDao.updatePekerja(pekerja.copy(totalLeaveQuota = finalQuota))
-            leaveQuotaDeducted = true
         }
+
+        val finalCheckInStatus = if (isLate) "LATE" else "ON_TIME"
 
         val log = AttendanceLog(
             pekerjaId = pekerjaId,
@@ -456,11 +463,12 @@ class AbsenlahRepository(private val db: AbsenlahDatabase) {
         attendanceLogDao.insertLog(log)
 
         // Update UserStats: we DO NOT increment latenessCount for standard LATE because it's PENDING review!
-        // We only update total fines / bonuses, and increment leaveQuotasUsed if it's after 2 PM.
+        // We only update total fines / bonuses, and increment leaveQuotasUsed if a deduction occurred.
         val updatedStats = stats.copy(
-            totalFinesAmount = stats.totalFinesAmount + (if (isAfter2PM) 0 else checkInEval.fine),
+            totalFinesAmount = stats.totalFinesAmount + (if (leaveQuotaDeducted) 0 else checkInEval.fine),
             totalBonusesAmount = stats.totalBonusesAmount + (if (isLate) 0 else checkInEval.bonus),
-            leaveQuotasUsed = if (leaveQuotaDeducted) stats.leaveQuotasUsed + 1 else stats.leaveQuotasUsed
+            leaveQuotasUsed = if (leaveQuotaDeducted) stats.leaveQuotasUsed + 1 else stats.leaveQuotasUsed,
+            latenessCount = if (checkInEval.convertedToLeaveDeduction) stats.latenessCount + 1 else stats.latenessCount
         )
         userStatsDao.updateUserStats(updatedStats)
 
