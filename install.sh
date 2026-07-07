@@ -112,7 +112,7 @@ echo -e "\n${BOLD}${PURPLE}[STAGE 3/6] CONFIGURING DOCKER COMPOSE & PRODUCTION S
 log_info "Membuat file konfigurasi variabel lingkungan (.env & server/.env)..."
 
 # Root / Frontend config
-cat << EOF > ../.env
+cat << EOF > .env
 GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_KEY
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 EXPO_TOKEN=$EXPO_TOKEN
@@ -120,8 +120,8 @@ DEPLOY_DOMAIN=$DEPLOY_DOMAIN
 EOF
 
 # Backend config
-mkdir -p ../server
-cat << EOF > ../server/.env
+mkdir -p server
+cat << EOF > server/.env
 PORT=5000
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_KEY
@@ -132,7 +132,7 @@ log_success "Variabel lingkungan (.env) berhasil dikonfigurasi secara aman."
 
 # Generate Docker Compose orchestrator
 log_info "Membuat konfigurasi kontainer produksi (docker-compose.yml)..."
-cat << EOF > ../docker-compose.yml
+cat << EOF > docker-compose.yml
 version: '3.8'
 
 services:
@@ -170,7 +170,7 @@ EOF
 
 # Generate Backend Dockerfile
 log_info "Membuat Dockerfile.backend untuk deployment server backend..."
-cat << 'EOF' > ../Dockerfile.backend
+cat << 'EOF' > Dockerfile.backend
 FROM node:18-alpine
 WORKDIR /app
 COPY package.json ./
@@ -182,7 +182,7 @@ EOF
 
 # Generate Nginx secured SSL config
 log_info "Membangun konfigurasi server Nginx reverse proxy (nginx.conf)..."
-cat << EOF > ../nginx.conf
+cat << EOF > nginx.conf
 events { worker_connections 1024; }
 
 http {
@@ -242,9 +242,9 @@ log_success "File konfigurasi docker-compose.yml, Dockerfile.backend, dan nginx.
 echo -e "\n${BOLD}${PURPLE}[STAGE 4/6] INITIATING LOCAL NATIVE ANDROID COMPILATION${NC}"
 
 # Gradle command resolve
-if [ -f "../gradlew" ]; then
-    GRADLE_EXEC="../gradlew"
-    chmod +x ../gradlew
+if [ -f "./gradlew" ]; then
+    GRADLE_EXEC="./gradlew"
+    chmod +x gradlew
 else
     GRADLE_EXEC="gradle"
 fi
@@ -262,7 +262,7 @@ fi
 echo -e "\n${BOLD}${PURPLE}[STAGE 5/6] PREPARING EXPO EAS CLOUD MOBILE PREVIEWS${NC}"
 log_info "Membuat otomatisasi instalasi Expo CLI dan build EAS..."
 
-cat << 'EOF' > ../run_expo_build.sh
+cat << 'EOF' > run_expo_build.sh
 #!/bin/bash
 set -e
 echo "Memulai Proses Build Menggunakan Expo EAS Cloud..."
@@ -280,7 +280,7 @@ fi
 echo "Mendaftarkan proyek dan memicu EAS Build Preview..."
 eas build --platform android --profile preview --non-interactive
 EOF
-chmod +x ../run_expo_build.sh
+chmod +x run_expo_build.sh
 
 log_success "Script pembantu Expo ('run_expo_build.sh') sukses dibuat!"
 
@@ -309,4 +309,4 @@ echo -e "  Jalankan script otomatis yang kami sediakan:"
 echo -e "     👉 ${CYAN}./run_expo_build.sh${NC}"
 echo -e "===================================================================="
 EOF
-chmod +x /app/install.sh
+chmod +x /install.sh
