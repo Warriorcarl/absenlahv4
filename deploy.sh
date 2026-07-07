@@ -55,7 +55,10 @@ if [[ "$DO_CLONE" =~ ^[Yy]$ ]]; then
     if command -v git >/dev/null 2>&1; then
         # Check if folder is already a git repo or if we need to clone
         if [ -d ".git" ]; then
-            log_warn "Direktori ini sudah merupakan repositori Git. Melakukan pull terbaru..."
+            log_warn "Direktori ini sudah merupakan repositori Git. Menyimpan perubahan lokal dan melakukan reset agar tidak terjadi konflik..."
+            git stash || true
+            git fetch --all || true
+            git reset --hard origin/main || true
             git pull || true
         else
             git clone "$GIT_REPO_URL" temp_clone
@@ -324,7 +327,7 @@ COPY . .
 RUN npx expo export --platform web || npm run build || mkdir -p dist
 
 # --- Stage 2: Build Native Android APK ---
-FROM openjdk:17-jdk-slim AS android-builder
+FROM eclipse-temurin:17-jdk AS android-builder
 WORKDIR /app
 COPY . .
 
